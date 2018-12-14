@@ -89,8 +89,15 @@ func main() {
 	}
 	for _, funccall := range platformconfig.Functions {
 		if funccall.FunctionName == "set(" && funccall.Fargs[0] == p.Project+"_LINKER_LIBRARIES" {
-			for _, linklib := range strings.Split(funccall.Fargs[1], ";") {
-				linkerlibs[linklib] = false
+			if len(funccall.Fargs) < 2 {
+				log.Printf("ERROR: unexpected line in %s", platformconfigpath)
+				log.Printf("       at %v", funccall.Pos)
+				log.Printf("       function: %s", funccall.FunctionName)
+				log.Printf("       args: %v", funccall.Fargs)
+			} else {
+				for _, linklib := range strings.Split(funccall.Fargs[1], ";") {
+					linkerlibs[linklib] = false
+				}
 			}
 		}
 	}
