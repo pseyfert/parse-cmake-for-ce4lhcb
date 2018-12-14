@@ -45,7 +45,7 @@ func parse(fname string) (*ListsFile, error) {
 	Whitespace = " " | "\t" | "\n" | "\r" .
 	EOL = ( "\n" | "\r" ) { "\n" | "\r" } .
 
-	argchar = "_" | "$" | "{" | "}" | "a"…"z" | "0"…"9" | "." | ";" | "-" | "A"…"Z" | "/" | ( "\\" any ) | "+" .
+	argchar = "_" | "$" | "{" | "}" | "a"…"z" | "0"…"9" | "." | ";" | "-" | "A"…"Z" | "/" | ( "\\" any ) | "+" | ":" .
 	identchar = "_" | "a"…"z" | "0"…"9" | "A"…"Z" .
 	any = "\u0000"…"\uffff" .
 	`))
@@ -78,10 +78,8 @@ func main() {
 	flag.StringVar(&cc2ce4lhcb.Cmtconfig, "cmtconfig", "x86_64+avx2+fma-centos7-gcc7-opt", "platform, like x86_64+avx2+fma-centos7-gcc7-opt or x86_64-centos7-gcc7-opt")
 	flag.StringVar(&cc2ce4lhcb.Nightlyroot, "nightly-base", "/cvmfs/lhcbdev.cern.ch/nightlies/", "add the specified directory to the nightly builds search path")
 	flag.Parse()
-	p.Project = strings.ToUpper(p.Project)
-	mixedcasename := p.Project[0:1] + strings.ToLower(p.Project[1:len(p.Project)])
 
-	platformconfigpath := filepath.Join(cc2ce4lhcb.Installarea(p), "cmake", mixedcasename+"PlatformConfig.cmake")
+	platformconfigpath := filepath.Join(cc2ce4lhcb.Installarea(p), "cmake", p.Project+"PlatformConfig.cmake")
 	thislibdir := filepath.Join(cc2ce4lhcb.Installarea(p), "lib")
 	upperCaseL[thislibdir] = true
 	platformconfig, err := parse(platformconfigpath)
@@ -90,7 +88,7 @@ func main() {
 		os.Exit(7)
 	}
 	for _, funccall := range platformconfig.Functions {
-		if funccall.FunctionName == "set(" && funccall.Fargs[0] == mixedcasename+"_LINKER_LIBRARIES" {
+		if funccall.FunctionName == "set(" && funccall.Fargs[0] == p.Project+"_LINKER_LIBRARIES" {
 			for _, linklib := range strings.Split(funccall.Fargs[1], ";") {
 				linkerlibs[linklib] = false
 			}
