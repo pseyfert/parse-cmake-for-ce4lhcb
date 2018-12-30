@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -251,18 +250,13 @@ func CompilerAndOptions(p cc2ce4lhcb.Project, nightlyroot, cmtconfig string) (Co
 func CompilerAndOptionsFromJsonByFilename(inFileName string) (CompilerConfig, error) {
 	var retval CompilerConfig
 
-	if !strings.HasSuffix(inFileName, "compile_commands.json") {
-		inFileName = filepath.Join(inFileName, "compile_commands.json")
-	}
-	jsonFile, err := os.Open(inFileName)
+	db, err := cc2ce.JsonTUsByFilename(inFileName)
 	if err != nil {
 		return retval, err
 	}
-	defer jsonFile.Close()
-	byteValue, _ := ioutil.ReadAll(jsonFile)
 
-	retval.Exe, err = CompilerFromJsonByBytes(byteValue)
-	retval.Options, err = cc2ce.OptionsFromJsonByBytes(byteValue)
+	retval.Exe, err = CompilerFromJsonByDB(db)
+	retval.Options, err = cc2ce.OptionsFromJsonByDB(db)
 	return retval, err
 }
 
