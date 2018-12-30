@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
+	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -10,17 +14,26 @@ import (
 	"github.com/alecthomas/participle"
 	"github.com/alecthomas/participle/lexer"
 	"github.com/alecthomas/participle/lexer/ebnf"
+	"github.com/pseyfert/compilecommands_to_compilerexplorer/cc2ce"
 	"github.com/pseyfert/compilecommands_to_compilerexplorer/cc2ce4lhcb"
 )
 
 var replacementvars = map[string]string{
 	"LCG_releases_base": "/cvmfs/lhcb.cern.ch/lib/lcg/releases",
 }
+var target_to_l = map[string]bool{
+	"dl": true,
+}
 
+// collection of all REQUIRED_LIBRARIES, i.e. transitive link dependencies
+// may be targets, -l calls, paths
 var all_libs = map[string]bool{}
 var upperCaseL = map[string]bool{}
 var lowerCaseL = map[string]bool{}
 var targetLs = map[string]bool{}
+
+// linker library targets that are exported from cmake
+// bool: true/false depending if their target property settings have been found
 var linkerlibs = map[string]bool{}
 
 // project's linker lib -> dependencies got resolved
@@ -125,6 +138,9 @@ func main() {
 						loclibs = append(loclibs, f.Fargs[i])
 					}
 				}
+				if len(loclibs) > 1 {
+					log.Printf("WARNING: more than one library in set_target_properties call. Expect undefined behaviour: %v in %s", loclibs, exportfile)
+				}
 				need_this := false
 				for _, loclib := range loclibs {
 					if _, found := linkerlibs[loclib]; found {
@@ -133,7 +149,7 @@ func main() {
 					}
 				}
 				if !need_this {
-					break
+					continue
 				}
 				for i++; i < len(f.Fargs); i += 2 {
 					property := f.Fargs[i]
@@ -148,6 +164,14 @@ func main() {
 						}
 						for _, l := range strings.Split(value, ";") {
 							all_libs[l] = true
+						}
+					}
+					if property == "IMPORTED_SONAME" {
+						if strings.HasPrefix(value, "lib") && strings.HasSuffix(value, ".so") {
+							lowerCaseL[value[3:len(value)-3]] = true
+							if loclibs[0] != value[3:len(value)-3] {
+								log.Printf("target name and library file name differ: %s -> %s", loclibs[0], value[3:len(value)-3])
+							}
 						}
 					}
 				}
@@ -171,12 +195,21 @@ func main() {
 			}
 			upperCaseL[dir] = true
 			lowerCaseL[validateme] = true
+		} else if strings.HasPrefix(l, "-l") {
+			lowerCaseL[l[2:len(l)]] = true
 		} else {
 			if _, found := linkerlibs[l]; !found {
 				targetLs[l] = true
 			}
 		}
 	}
+	for l, _ := range targetLs {
+		if _, found := target_to_l[l]; found {
+			lowerCaseL[l] = true
+			delete(targetLs, l)
+		}
+	}
+
 	for l, _ := range upperCaseL {
 		log.Printf("dir: %s", l)
 	}
@@ -186,5 +219,86 @@ func main() {
 	for l, _ := range targetLs {
 		log.Printf("target: %s", l)
 	}
+	for l, _ := range linkerlibs {
+		log.Printf("linkerlib: %s", l)
+	}
+	for l, _ := range targetLs {
+		if _, found := linkerlibs[l]; !found {
+			log.Printf("external target: %s", l)
+		}
+	}
+	compilerconf, err := CompilerAndOptions(p, cc2ce4lhcb.Nightlyroot, cc2ce4lhcb.Cmtconfig)
+	if nil != err {
+		log.Print("PANIC")
+		os.Exit(888)
+	}
 
+	compilerconf.Options += PrefixedSeparatorSeparateMap(upperCaseL, "-L", " ")
+	compilerconf.Options += PrefixedSeparatorSeparateMap(lowerCaseL, "-l", " ")
+	err = WriteConfig([]CompilerConfig{compilerconf})
+	if nil != err {
+		log.Printf("something failed: %v", err)
+	}
+}
+
+func CompilerAndOptions(p cc2ce4lhcb.Project, nightlyroot, cmtconfig string) (CompilerConfig, error) {
+	retval, err := CompilerAndOptionsFromJsonByFilename(cc2ce4lhcb.Installarea(p))
+	retval.Name = p.Project
+	retval.ConfName = p.CE_config_name()
+	return retval, err
+}
+
+func CompilerAndOptionsFromJsonByFilename(inFileName string) (CompilerConfig, error) {
+	var retval CompilerConfig
+
+	if !strings.HasSuffix(inFileName, "compile_commands.json") {
+		inFileName = filepath.Join(inFileName, "compile_commands.json")
+	}
+	jsonFile, err := os.Open(inFileName)
+	if err != nil {
+		return retval, err
+	}
+	defer jsonFile.Close()
+	byteValue, _ := ioutil.ReadAll(jsonFile)
+
+	retval.Exe, err = CompilerFromJsonByBytes(byteValue)
+	retval.Options, err = cc2ce.OptionsFromJsonByBytes(byteValue)
+	return retval, err
+}
+
+func PrefixedSeparatorSeparateMap(stringset map[string]bool, pref, sep string) string {
+	var b bytes.Buffer
+	addseparator := false
+	for k, _ := range stringset {
+		if addseparator {
+			b.WriteString(sep)
+		} else {
+			addseparator = true
+		}
+		b.WriteString(pref)
+		b.WriteString(k)
+	}
+	return b.String()
+}
+
+func CompilerFromJsonByBytes(inFileContent []byte) (string, error) {
+	var db []cc2ce.JsonTranslationunit
+	json.Unmarshal(inFileContent, &db)
+	return CompilerFromJsonByDB(db)
+}
+
+func CompilerFromJsonByDB(db []cc2ce.JsonTranslationunit) (string, error) {
+	var b bytes.Buffer
+	for _, tu := range db {
+		words := strings.Fields(tu.Command)
+		for _, w := range words {
+			if strings.HasPrefix(w, "-") || strings.HasSuffix(w, ".cpp") {
+				break
+			}
+			b.WriteString(w)
+			b.WriteString(" ")
+		}
+		return b.String(), nil
+	}
+	return "", fmt.Errorf("no translation units found")
 }
