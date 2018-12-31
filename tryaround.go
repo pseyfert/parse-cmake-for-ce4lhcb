@@ -24,12 +24,16 @@ var target_to_l = map[string]bool{
 	"dl": true,
 }
 
-// collection of all REQUIRED_LIBRARIES, i.e. transitive link dependencies
-// may be targets, -l calls, paths
-var all_libs = map[string]bool{}
-var upperCaseL = map[string]bool{}
-var lowerCaseL = map[string]bool{}
-var targetLs = map[string]bool{}
+type ProjectConfig struct {
+	// collection of all REQUIRED_LIBRARIES, i.e. transitive link dependencies
+	// may be targets, -l calls, paths
+	all_libs         map[string]bool
+	upperCaseL       map[string]bool
+	lowerCaseL       map[string]bool
+	targetLs         map[string]bool
+	externalTargetLs map[string]bool
+	deps             []cc2ce4lhcb.Project
+}
 
 // linker library targets that are exported from cmake
 // bool: true/false depending if their target property settings have been found
@@ -91,9 +95,118 @@ func main() {
 	flag.StringVar(&cc2ce4lhcb.Nightlyroot, "nightly-base", "/cvmfs/lhcbdev.cern.ch/nightlies/", "add the specified directory to the nightly builds search path")
 	flag.Parse()
 
+	cmakeconfig := ParseProjectConfig(p)
+
+	var dependent_projects map[*cc2ce4lhcb.Project]*ProjectConfig
+	for _, project := range cmakeconfig.deps {
+		dependent_projects[&project] = nil
+	}
+	nonil := func(m map[*cc2ce4lhcb.Project]*ProjectConfig) bool {
+		all_are_true := true
+		for _, v := range m {
+			all_are_true = (v != nil)
+		}
+		return all_are_true
+	}
+
+	for !nonil(dependent_projects) {
+		for pp, v := range dependent_projects {
+			if v != nil {
+				continue
+			}
+
+			cmakeconfig = ParseProjectConfig(*pp)
+			dependent_projects[pp] = &cmakeconfig
+		deploop:
+			for _, project := range cmakeconfig.deps {
+				for ppp, _ := range dependent_projects {
+					if (*ppp).Project == project.Project {
+						continue deploop
+					}
+				}
+				dependent_projects[&project] = nil
+			}
+		}
+	}
+
+	compilerconf, err := CompilerAndOptions(p, cc2ce4lhcb.Nightlyroot, cc2ce4lhcb.Cmtconfig)
+	if nil != err {
+		log.Print("PANIC")
+		os.Exit(888)
+	}
+
+	mapappend := func(a, b map[string]bool) map[string]bool {
+		retval := a
+		for k, v := range b {
+			retval[k] = v
+		}
+		return retval
+	}
+
+	for _, v := range dependent_projects {
+		cmakeconfig.upperCaseL = mapappend(cmakeconfig.upperCaseL, v.upperCaseL)
+		cmakeconfig.lowerCaseL = mapappend(cmakeconfig.lowerCaseL, v.lowerCaseL)
+	}
+	compilerconf.Options += PrefixedSeparatorSeparateMap(cmakeconfig.upperCaseL, "-L", " ")
+	compilerconf.Options += PrefixedSeparatorSeparateMap(cmakeconfig.lowerCaseL, "-l", " ")
+	err = WriteConfig([]CompilerConfig{compilerconf})
+	if nil != err {
+		log.Printf("something failed: %v", err)
+	}
+}
+
+func GaudiProjectDependencies(p cc2ce4lhcb.Project) ([]cc2ce4lhcb.Project, error) {
+	var retval = make([]cc2ce4lhcb.Project, 0)
+	configpath := filepath.Join(cc2ce4lhcb.Installarea(p), p.Project+"Config.cmake")
+	// contains the line: set(LHCb_USES Gaudi;master)
+	// or (multi deps example): set(DaVinci_USES Analysis;HEAD;Stripping;HEAD)
+	projectconfig, err := parse(configpath)
+	if err != nil {
+		log.Print("ERROR: Couldn't open project config: %v", err)
+		return retval, err
+	}
+	for _, funccall := range projectconfig.Functions {
+		if funccall.FunctionName == "set(" && funccall.Fargs[0] == p.Project+"_USES" {
+			if len(funccall.Fargs) < 2 {
+				log.Printf("WARNING: no 'USES' (i.e. project dependencies) declared")
+				log.Printf("         in project %s", p.Project)
+				log.Printf("         in file %s:%v", configpath, funccall.Pos)
+				log.Printf("       function: %s", funccall.FunctionName)
+				log.Printf("       args: %v", funccall.Fargs)
+			} else {
+				deps := strings.Split(funccall.Fargs[1], ";")
+				if len(deps)%2 == 1 {
+					log.Printf("ERROR: unexpected USES pattern")
+					log.Printf("       has even number of ;")
+					log.Printf("       instead found: %s", funccall.Fargs[1])
+				}
+				for i := 0; i < len(deps); i += 2 {
+					var pp cc2ce4lhcb.Project
+					pp.Slot = p.Slot
+					pp.Day = p.Day
+					p.Project = deps[i]
+					p.Version = deps[i+1]
+
+					retval = append(retval, p)
+				}
+			}
+
+		}
+	}
+	return retval, nil
+}
+
+func ParseProjectConfig(p cc2ce4lhcb.Project) ProjectConfig {
+	var project ProjectConfig
+	var err error
+	project.deps, err = GaudiProjectDependencies(p)
+	if err != nil {
+		log.Print("Error during dependency resolution, continuing with what will work out")
+	}
+
 	platformconfigpath := filepath.Join(cc2ce4lhcb.Installarea(p), "cmake", p.Project+"PlatformConfig.cmake")
 	thislibdir := filepath.Join(cc2ce4lhcb.Installarea(p), "lib")
-	upperCaseL[thislibdir] = true
+	project.upperCaseL[thislibdir] = true
 	platformconfig, err := parse(platformconfigpath)
 	if err != nil {
 		log.Printf("Couldn't open project config: %v", err)
@@ -162,12 +275,12 @@ func main() {
 							value = strings.Replace(value, "${"+k+"}", v, -1)
 						}
 						for _, l := range strings.Split(value, ";") {
-							all_libs[l] = true
+							project.all_libs[l] = true
 						}
 					}
 					if property == "IMPORTED_SONAME" {
 						if strings.HasPrefix(value, "lib") && strings.HasSuffix(value, ".so") {
-							lowerCaseL[value[3:len(value)-3]] = true
+							project.lowerCaseL[value[3:len(value)-3]] = true
 							if loclibs[0] != value[3:len(value)-3] {
 								log.Printf("target name and library file name differ: %s -> %s", loclibs[0], value[3:len(value)-3])
 							}
@@ -181,10 +294,10 @@ func main() {
 		if !r {
 			log.Printf("WARNING: couldn't resolve link deps for %s", l)
 		} else {
-			lowerCaseL[l] = true
+			project.lowerCaseL[l] = true
 		}
 	}
-	for l, _ := range all_libs {
+	for l, _ := range project.all_libs {
 		if _, err := os.Stat(l); !os.IsNotExist(err) {
 			dir, file := filepath.Split(l)
 			validateme := file[3 : len(file)-3]
@@ -192,52 +305,42 @@ func main() {
 				log.Print("PANIC")
 				os.Exit(777)
 			}
-			upperCaseL[dir] = true
-			lowerCaseL[validateme] = true
+			project.upperCaseL[dir] = true
+			project.lowerCaseL[validateme] = true
 		} else if strings.HasPrefix(l, "-l") {
-			lowerCaseL[l[2:len(l)]] = true
+			project.lowerCaseL[l[2:len(l)]] = true
 		} else {
 			if _, found := linkerlibs[l]; !found {
-				targetLs[l] = true
+				project.targetLs[l] = true
 			}
 		}
 	}
-	for l, _ := range targetLs {
+	for l, _ := range project.targetLs {
 		if _, found := target_to_l[l]; found {
-			lowerCaseL[l] = true
-			delete(targetLs, l)
+			project.lowerCaseL[l] = true
+			delete(project.targetLs, l)
 		}
 	}
 
-	for l, _ := range upperCaseL {
+	for l, _ := range project.upperCaseL {
 		log.Printf("dir: %s", l)
 	}
-	for l, _ := range lowerCaseL {
+	for l, _ := range project.lowerCaseL {
 		log.Printf("lib: %s", l)
 	}
-	for l, _ := range targetLs {
+	for l, _ := range project.targetLs {
 		log.Printf("target: %s", l)
 	}
 	for l, _ := range linkerlibs {
 		log.Printf("linkerlib: %s", l)
 	}
-	for l, _ := range targetLs {
+	for l, _ := range project.targetLs {
 		if _, found := linkerlibs[l]; !found {
+			project.externalTargetLs[l] = true
 			log.Printf("external target: %s", l)
 		}
 	}
-	compilerconf, err := CompilerAndOptions(p, cc2ce4lhcb.Nightlyroot, cc2ce4lhcb.Cmtconfig)
-	if nil != err {
-		log.Print("PANIC")
-		os.Exit(888)
-	}
-
-	compilerconf.Options += PrefixedSeparatorSeparateMap(upperCaseL, "-L", " ")
-	compilerconf.Options += PrefixedSeparatorSeparateMap(lowerCaseL, "-l", " ")
-	err = WriteConfig([]CompilerConfig{compilerconf})
-	if nil != err {
-		log.Printf("something failed: %v", err)
-	}
+	return project
 }
 
 func CompilerAndOptions(p cc2ce4lhcb.Project, nightlyroot, cmtconfig string) (CompilerConfig, error) {
