@@ -126,6 +126,8 @@ func ParseProjectConfig(p cc2ce4lhcb.Project) ProjectConfig {
 				log.Printf("       at %v", funccall.Pos)
 				log.Printf("       function: %s", funccall.FunctionName)
 				log.Printf("       args: %v", funccall.Fargs)
+				log.Printf("Project does not seem to declare any library to link against.")
+				log.Printf("(This is normal for some projects (Lbcom). Continuing.")
 			} else {
 				for _, linklib := range strings.Split(funccall.Fargs[1], ";") {
 					linkerlibs[linklib] = false
