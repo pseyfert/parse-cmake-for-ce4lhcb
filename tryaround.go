@@ -22,6 +22,15 @@ var target_to_l = map[string]bool{
 }
 
 func main() {
+	// helper
+	mapappend := func(a, b map[string]bool) map[string]bool {
+		retval := a
+		for k, v := range b {
+			retval[k] = v
+		}
+		return retval
+	}
+
 	var p cc2ce4lhcb.Project
 	flag.StringVar(&p.Slot, "slot", "lhcb-head", "nightlies slot (i.e. directory in /cvmfs/lhcbdev.cern.ch/nightlies/)")
 	flag.StringVar(&p.Day, "day", "Today", "day/buildID (i.e. subdirectory, such as 'Today', 'Mon', or '2032')")
@@ -37,6 +46,9 @@ func main() {
 	for _, project := range cmakeconfig.DependsOn {
 		dependent_projects[&project] = nil
 	}
+	needed_external_targets := cmakeconfig.ExternalTargetLs
+	resoved_external_targets := cmakeconfig.ExportedTargetLs
+
 	nonil := func(m map[*cc2ce4lhcb.Project]*ProjectConfig) bool {
 		all_are_true := true
 		for _, v := range m {
@@ -52,6 +64,9 @@ func main() {
 			}
 
 			loccmakeconfig := ParseProjectConfig(*pp)
+			resoved_external_targets = mapappend(resoved_external_targets, loccmakeconfig.ExportedTargetLs)
+			needed_external_targets = mapappend(needed_external_targets, loccmakeconfig.ExternalTargetLs)
+
 			dependent_projects[pp] = &loccmakeconfig
 		deploop:
 			for _, project := range loccmakeconfig.DependsOn {
@@ -65,18 +80,19 @@ func main() {
 		}
 	}
 
+	for k, _ := range needed_external_targets {
+		if _, found := resoved_external_targets[k]; found {
+			delete(needed_external_targets, k)
+		}
+	}
+	for l, _ := range needed_external_targets {
+		log.Printf("external targets not found anywhere: %s", l)
+	}
+
 	compilerconf, err := CompilerAndOptions(p, cc2ce4lhcb.Nightlyroot, cc2ce4lhcb.Cmtconfig)
 	if nil != err {
 		log.Print("PANIC")
 		os.Exit(888)
-	}
-
-	mapappend := func(a, b map[string]bool) map[string]bool {
-		retval := a
-		for k, v := range b {
-			retval[k] = v
-		}
-		return retval
 	}
 
 	for _, v := range dependent_projects {
@@ -93,17 +109,7 @@ func main() {
 }
 
 func ParseProjectConfig(p cc2ce4lhcb.Project) ProjectConfig {
-
-	// linker library targets that are exported from cmake
-	// bool: true/false depending if their target property settings have been found
-	var linkerlibs = map[string]bool{}
-
-	var project ProjectConfig
-	project.UpperCaseL = map[string]bool{}
-	project.AllLibs = map[string]bool{}
-	project.LowerCaseL = map[string]bool{}
-	project.TargetLs = map[string]bool{}
-	project.ExternalTargetLs = map[string]bool{}
+	project := NewProjectConfig()
 
 	var err error
 	project.DependsOn, err = GaudiProjectDependencies(p)
@@ -130,7 +136,7 @@ func ParseProjectConfig(p cc2ce4lhcb.Project) ProjectConfig {
 				log.Printf("(This is normal for some projects (Lbcom). Continuing.")
 			} else {
 				for _, linklib := range strings.Split(funccall.Fargs[1], ";") {
-					linkerlibs[linklib] = false
+					project.ExportedTargetLs[linklib] = false
 				}
 			}
 		}
@@ -164,8 +170,8 @@ func ParseProjectConfig(p cc2ce4lhcb.Project) ProjectConfig {
 				}
 				need_this := false
 				for _, loclib := range loclibs {
-					if _, found := linkerlibs[loclib]; found {
-						linkerlibs[loclib] = true
+					if _, found := project.ExportedTargetLs[loclib]; found {
+						project.ExportedTargetLs[loclib] = true
 						need_this = true
 					}
 				}
@@ -199,7 +205,7 @@ func ParseProjectConfig(p cc2ce4lhcb.Project) ProjectConfig {
 			}
 		}
 	}
-	for l, r := range linkerlibs {
+	for l, r := range project.ExportedTargetLs {
 		if !r {
 			log.Printf("WARNING: couldn't resolve link deps for %s", l)
 		} else {
@@ -219,7 +225,7 @@ func ParseProjectConfig(p cc2ce4lhcb.Project) ProjectConfig {
 		} else if strings.HasPrefix(l, "-l") {
 			project.LowerCaseL[l[2:len(l)]] = true
 		} else {
-			if _, found := linkerlibs[l]; !found {
+			if _, found := project.ExportedTargetLs[l]; !found {
 				project.TargetLs[l] = true
 			}
 		}
@@ -240,11 +246,11 @@ func ParseProjectConfig(p cc2ce4lhcb.Project) ProjectConfig {
 	for l, _ := range project.TargetLs {
 		log.Printf("target: %s", l)
 	}
-	for l, _ := range linkerlibs {
+	for l, _ := range project.ExportedTargetLs {
 		log.Printf("linkerlib: %s", l)
 	}
 	for l, _ := range project.TargetLs {
-		if _, found := linkerlibs[l]; !found {
+		if _, found := project.ExportedTargetLs[l]; !found {
 			project.ExternalTargetLs[l] = true
 			log.Printf("external target: %s", l)
 		}
