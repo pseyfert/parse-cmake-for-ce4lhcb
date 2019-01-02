@@ -10,9 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alecthomas/participle"
-	"github.com/alecthomas/participle/lexer"
-	"github.com/alecthomas/participle/lexer/ebnf"
 	"github.com/pseyfert/compilecommands_to_compilerexplorer/cc2ce"
 	"github.com/pseyfert/compilecommands_to_compilerexplorer/cc2ce4lhcb"
 )
@@ -22,50 +19,6 @@ var replacementvars = map[string]string{
 }
 var target_to_l = map[string]bool{
 	"dl": true,
-}
-
-type ListsFile struct {
-	Functions []*Function `{ @@ }`
-}
-
-type Function struct {
-	Pos          lexer.Position
-	FunctionName string   `@Ident`
-	Fargs        []string `{ @( Arg | String ) } ")"`
-}
-
-func parse(fname string) (*ListsFile, error) {
-	mylexer := lexer.Must(ebnf.New(`
-	Comment = "#" { "\u0000"…"\uffff"-"\n"-"\r" } .
-	Ident = identchar { identchar } "(" .
-	Arg = argchar { argchar } .
-	CParenthesis = ")" .
-	String = "\"" { "\u0000"…"\uffff"-"\""-"\\" | "\\" any } "\"" .
-	Whitespace = " " | "\t" | "\n" | "\r" .
-	EOL = ( "\n" | "\r" ) { "\n" | "\r" } .
-
-	argchar = "_" | "$" | "{" | "}" | "a"…"z" | "0"…"9" | "." | ";" | "-" | "A"…"Z" | "/" | ( "\\" any ) | "+" | ":" .
-	identchar = "_" | "a"…"z" | "0"…"9" | "A"…"Z" .
-	any = "\u0000"…"\uffff" .
-	`))
-
-	parser := participle.MustBuild(&ListsFile{},
-		participle.Lexer(mylexer),
-		participle.Elide("Comment", "Whitespace"),
-	)
-	cmakelists := &ListsFile{}
-	filecontent, err := os.Open(fname)
-	if err != nil {
-		log.Printf("Couldn't open file: %v", err)
-		return nil, err
-	}
-	defer filecontent.Close()
-	err = parser.Parse(filecontent, cmakelists)
-	if err != nil {
-		log.Printf("Parsing failed: %v", err)
-		return nil, err
-	}
-	return cmakelists, nil
 }
 
 func main() {
@@ -80,7 +33,7 @@ func main() {
 
 	cmakeconfig := ParseProjectConfig(p)
 
-	var dependent_projects map[*cc2ce4lhcb.Project]*ProjectConfig
+	var dependent_projects = map[*cc2ce4lhcb.Project]*ProjectConfig{}
 	for _, project := range cmakeconfig.DependsOn {
 		dependent_projects[&project] = nil
 	}
@@ -98,10 +51,10 @@ func main() {
 				continue
 			}
 
-			cmakeconfig = ParseProjectConfig(*pp)
-			dependent_projects[pp] = &cmakeconfig
+			loccmakeconfig := ParseProjectConfig(*pp)
+			dependent_projects[pp] = &loccmakeconfig
 		deploop:
-			for _, project := range cmakeconfig.DependsOn {
+			for _, project := range loccmakeconfig.DependsOn {
 				for ppp, _ := range dependent_projects {
 					if (*ppp).Project == project.Project {
 						continue deploop
@@ -131,6 +84,7 @@ func main() {
 		cmakeconfig.LowerCaseL = mapappend(cmakeconfig.LowerCaseL, v.LowerCaseL)
 	}
 	compilerconf.Options += PrefixedSeparatorSeparateMap(cmakeconfig.UpperCaseL, "-L", " ")
+	compilerconf.Options += " "
 	compilerconf.Options += PrefixedSeparatorSeparateMap(cmakeconfig.LowerCaseL, "-l", " ")
 	err = WriteConfig([]CompilerConfig{compilerconf})
 	if nil != err {
@@ -145,6 +99,12 @@ func ParseProjectConfig(p cc2ce4lhcb.Project) ProjectConfig {
 	var linkerlibs = map[string]bool{}
 
 	var project ProjectConfig
+	project.UpperCaseL = map[string]bool{}
+	project.AllLibs = map[string]bool{}
+	project.LowerCaseL = map[string]bool{}
+	project.TargetLs = map[string]bool{}
+	project.ExternalTargetLs = map[string]bool{}
+
 	var err error
 	project.DependsOn, err = GaudiProjectDependencies(p)
 	if err != nil {
