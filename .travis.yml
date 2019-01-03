@@ -2,6 +2,9 @@ sudo: required
 
 language: go
 
+services:
+  - docker
+
 script:
   - git clone https://gitlab.cern.ch/lhcb-core/LbDocker.git
   - ./LbDocker/scripts/lb-docker-run --force-cvmfs --privileged -v ${TRAVIS_BUILD_DIR}:/repo.git -it /bin/bash -c '
