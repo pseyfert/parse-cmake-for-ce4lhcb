@@ -11,4 +11,5 @@ script:
     cd /repo.git
     go build .
     ./parse-cmake-for-ce4lhcb -project Brunel
+    cat c++.default.properties
     '
