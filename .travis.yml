@@ -1,0 +1,11 @@
+sudo: required
+
+language: go
+
+script:
+  - git clone https://gitlab.cern.ch/lhcb-core/LbDocker.git
+  - ./LbDocker/scripts/lb-docker-run --force-cvmfs --privileged -v ${TRAVIS_BUILD_DIR}:/repo.git -it /bin/bash -c '
+    cd /repo.git
+    go build .
+    ./parse-cmake-for-ce4lhcb -project Brunel
+    '
