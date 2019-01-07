@@ -101,6 +101,8 @@ func main() {
 	}
 	compilerconf.Options += PrefixedSeparatorSeparateMap(cmakeconfig.UpperCaseL, "-L", " ")
 	compilerconf.Options += " "
+	compilerconf.Options += PrefixedSeparatorSeparateMap(cmakeconfig.UpperCaseL, "-Wl,-rpath=", " ")
+	compilerconf.Options += " "
 	compilerconf.Options += PrefixedSeparatorSeparateMap(cmakeconfig.LowerCaseL, "-l", " ")
 	err = WriteConfig([]CompilerConfig{compilerconf})
 	if nil != err {
