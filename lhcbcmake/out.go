@@ -1,4 +1,4 @@
-package main
+package lhcbcmake
 
 import (
 	"bytes"
@@ -6,17 +6,11 @@ import (
 	"log"
 
 	write "github.com/google/renameio"
+	"github.com/pseyfert/parse-cmake-for-ce4lhcb/cc4ce_extensions"
 )
 
-type CompilerConfig struct {
-	Exe      string
-	Name     string
-	ConfName string
-	Options  string
-}
-
-func WriteConfig(confs []CompilerConfig) error {
-	f, err := write.TempFile("", "./c++.default.properties")
+func WriteConfig(confs []cc4ce_extensions.CompilerConfig) error {
+	f, err := write.TempFile("", "./c++.defaults.properties")
 	if err != nil {
 		log.Printf("Couldn't create tempfile for output writing: %v", err)
 		return err
@@ -47,7 +41,7 @@ func WriteConfig(confs []CompilerConfig) error {
 		log.Print("Error writing to config: %v", err)
 		return err
 	}
-	compiler_writer := func(c CompilerConfig) error {
+	compiler_writer := func(c cc4ce_extensions.CompilerConfig) error {
 		if _, err := fmt.Fprintf(f, "compiler.%s.name=%s\n", c.ConfName, c.Name); err != nil {
 			log.Print("Error writing to config: %v", err)
 			return err
@@ -69,7 +63,7 @@ func WriteConfig(confs []CompilerConfig) error {
 	}
 
 	if err := f.CloseAtomicallyReplace(); err != nil {
-		log.Printf("writing c++.default.properties failed: %v", err)
+		log.Printf("writing c++.defaults.properties failed: %v", err)
 		return err
 	}
 	return nil

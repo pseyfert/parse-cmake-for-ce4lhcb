@@ -1,4 +1,4 @@
-package main
+package cmake
 
 import (
 	"log"
@@ -19,7 +19,7 @@ type Function struct {
 	Fargs        []string `{ @( Arg | String ) } ")"`
 }
 
-func parse(fname string) (*ListsFile, error) {
+func Parse(fname string) (*ListsFile, error) {
 	mylexer := lexer.Must(ebnf.New(`
 	Comment = "#" { "\u0000"…"\uffff"-"\n"-"\r" } .
 	Ident = identchar { identchar } "(" .
