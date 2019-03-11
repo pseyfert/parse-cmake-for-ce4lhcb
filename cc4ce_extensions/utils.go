@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
+	"os/exec"
+	"path"
 	"strings"
 
 	"github.com/pseyfert/compilecommands_to_compilerexplorer/cc2ce"
@@ -47,14 +50,32 @@ func CompilerFromJsonByDB(db []cc2ce.JsonTranslationunit) (string, error) {
 	var b bytes.Buffer
 	for _, tu := range db {
 		words := strings.Fields(tu.Command)
-		for _, w := range words {
+		for i, w := range words {
 			if strings.HasPrefix(w, "-") || strings.HasSuffix(w, ".cpp") {
 				break
 			}
+			if i != 0 {
+				b.WriteString(" ")
+			}
 			b.WriteString(w)
-			b.WriteString(" ")
 		}
 		return b.String(), nil
 	}
 	return "", fmt.Errorf("no translation units found")
+}
+
+func CompilerLibsRpath(bin string) (string, error) {
+	log.Printf("trying to determine libstdc++.so from compiler %s", bin)
+	output, err := exec.Command(bin, "-print-file-name=libstdc++.so").Output()
+	if nil != err {
+		return "", fmt.Errorf("call to %s failed: %v", bin, err)
+	}
+	if len(output) < 2 {
+		return "", fmt.Errorf("Received surprisingly short output from %s -print-file-name=libstdc++.so", bin)
+	}
+
+	var b bytes.Buffer
+	b.WriteString("-Wl,-rpath=")
+	b.WriteString(path.Dir(string(output[0 : len(output)-1])))
+	return b.String(), nil
 }
