@@ -10,17 +10,17 @@ import (
 )
 
 func WriteConfig(confs []cc4ce_extensions.CompilerConfig) error {
-	f, err := write.TempFile("", "./c++.defaults.properties")
+	f, err := write.TempFile("", "./c++.pseyfert-ce.properties")
 	if err != nil {
 		log.Printf("Couldn't create tempfile for output writing: %v", err)
 		return err
 	}
 	defer f.Cleanup()
 
-	if _, err := fmt.Fprint(f, "compilers=&autogen\n"); err != nil {
-		log.Print("Error writing to config: %v", err)
-		return err
-	}
+	// if _, err := fmt.Fprint(f, "compilers=&autogen\n"); err != nil {
+	// 	log.Print("Error writing to config: %v", err)
+	// 	return err
+	// }
 	{
 		var b bytes.Buffer
 		addseparator := false
