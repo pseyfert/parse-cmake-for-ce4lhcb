@@ -9,8 +9,8 @@ import (
 	"github.com/pseyfert/parse-cmake-for-ce4lhcb/cc4ce_extensions"
 )
 
-func WriteConfig(confs []cc4ce_extensions.CompilerConfig) error {
-	f, err := write.TempFile("", "./c++.pseyfert-ce.properties")
+func WriteConfig(confs []cc4ce_extensions.CompilerConfig, outname string) error {
+	f, err := write.TempFile("", outname)
 	if err != nil {
 		log.Printf("Couldn't create tempfile for output writing: %v", err)
 		return err
@@ -63,7 +63,7 @@ func WriteConfig(confs []cc4ce_extensions.CompilerConfig) error {
 	}
 
 	if err := f.CloseAtomicallyReplace(); err != nil {
-		log.Printf("writing c++.defaults.properties failed: %v", err)
+		log.Printf("writing %s failed: %v", outname, err)
 		return err
 	}
 	return nil
