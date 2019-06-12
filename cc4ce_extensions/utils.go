@@ -36,7 +36,7 @@ func CompilerAndOptionsFromJsonByFilename(inFileName string) (CompilerConfig, er
 	}
 
 	retval.Exe, err = CompilerFromJsonByDB(db)
-	retval.Options, err = cc2ce.OptionsFromJsonByDB(db)
+	retval.Options, err = cc2ce.OptionsFromJsonByDB(db, false)
 	return retval, err
 }
 
