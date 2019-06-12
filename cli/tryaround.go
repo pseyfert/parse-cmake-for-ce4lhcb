@@ -22,6 +22,7 @@ func main() {
 	flag.StringVar(&cc2ce4lhcb.Cmtconfig, "cmtconfig", "x86_64+avx2+fma-centos7-gcc8-opt", "platform, like x86_64+avx2+fma-centos7-gcc7-opt or x86_64-centos7-gcc7-opt")
 	flag.StringVar(&cc2ce4lhcb.Nightlyroot, "nightly-base", "/cvmfs/lhcbdev.cern.ch/nightlies/", "add the specified directory to the nightly builds search path")
 	flag.StringVar(&conffilename, "o", "./c++.pseyfert-ce.properties", "output filename")
+	cc2ce4lhcb.Released = false // TODO: do released versions at some point in the future
 	flag.Parse()
 
 	cmakeconfig := lhcbcmake.ParseProjectConfigWithDeps(p)
