@@ -199,7 +199,9 @@ func ParseProjectConfig(p cc2ce4lhcb.Project) ProjectConfig {
 							value = strings.Replace(value, "${"+k+"}", v, -1)
 						}
 						for _, l := range strings.Split(value, ";") {
-							project.AllLibs[l] = true
+							if !strings.HasPrefix(l, "/usr/lib") {
+								project.AllLibs[l] = true
+							}
 						}
 					}
 					if property == "IMPORTED_SONAME" {
