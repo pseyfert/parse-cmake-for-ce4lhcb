@@ -22,7 +22,7 @@ type CompilerConfig struct {
 
 func CompilerAndOptions(p cc2ce4lhcb.Project, nightlyroot, cmtconfig string) (CompilerConfig, error) {
 	retval, err := CompilerAndOptionsFromJsonByFilename(cc2ce4lhcb.Installarea(p))
-	retval.Name = p.Project
+	retval.Name = fmt.Sprintf("%s-%s", p.Project, cmtconfig)
 	retval.ConfName = p.CE_config_name()
 	return retval, err
 }

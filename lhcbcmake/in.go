@@ -13,6 +13,8 @@ import (
 func GaudiProjectDependencies(p cc2ce4lhcb.Project) ([]cc2ce4lhcb.Project, error) {
 	var retval = make([]cc2ce4lhcb.Project, 0)
 	configpath := filepath.Join(cc2ce4lhcb.Installarea(p), p.Project+"Config.cmake")
+	log.Printf("INFO: going into project %s", p.Project)
+	log.Printf("INFO: from file %s", configpath)
 	// contains the line: set(LHCb_USES Gaudi;master)
 	// or (multi deps example): set(DaVinci_USES Analysis;HEAD;Stripping;HEAD)
 	projectconfig, err := cmake.Parse(configpath)
